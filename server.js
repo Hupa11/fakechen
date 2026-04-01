@@ -1,72 +1,10 @@
 const express = require('express');
 const path = require('path');
 const axios = require('axios');
-const redis = require('redis');
 const config = require('./config');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-// Redis client setup
-let redisClient;
-let isRedisConnected = false;
-
-(async () => {
-    try {
-        // Check if Redis configuration is provided
-        if (!process.env.REDIS_HOST) {
-            console.log('Redis: No REDIS_HOST configured, running without cache');
-            isRedisConnected = false;
-            return;
-        }
-
-        // Parse and validate port
-        const redisPort = parseInt(process.env.REDIS_PORT, 10);
-        if (isNaN(redisPort) || redisPort <= 0 || redisPort > 65535) {
-            console.log('Redis: Invalid REDIS_PORT configured, running without cache');
-            isRedisConnected = false;
-            return;
-        }
-
-        // Redis Cloud configuration
-        const redisConfig = {
-            socket: {
-                host: process.env.REDIS_HOST,
-                port: redisPort,
-                tls: process.env.REDIS_TLS !== 'false', // Enable TLS by default for cloud Redis
-                reconnectStrategy: (retries) => {
-                    if (retries > 10) {
-                        console.log('Redis: Max reconnection attempts reached');
-                        return new Error('Redis reconnection failed');
-                    }
-                    return retries * 100;
-                }
-            }
-        };
-
-        // Add password if provided
-        if (process.env.REDIS_PASSWORD) {
-            redisConfig.password = process.env.REDIS_PASSWORD;
-        }
-
-        redisClient = redis.createClient(redisConfig);
-
-        redisClient.on('error', (err) => {
-            console.log('Redis Client Error (will work without cache):', err.message);
-            isRedisConnected = false;
-        });
-
-        redisClient.on('connect', () => {
-            console.log('Redis connected successfully to cloud instance');
-            isRedisConnected = true;
-        });
-
-        await redisClient.connect();
-    } catch (error) {
-        console.log('Redis not available, running without cache:', error.message);
-        isRedisConnected = false;
-    }
-})();
 
 // Middleware
 app.use(express.json());
@@ -87,27 +25,6 @@ app.use('/api', (req, res, next) => {
 // External API base URL from config.js
 const API_BASE_URL = config.API_BASE_URL;
 console.log(`Using external API: ${API_BASE_URL}`);
-
-// Cache helper functions
-async function getCache(key) {
-    if (!isRedisConnected) return null;
-    try {
-        const data = await redisClient.get(key);
-        return data ? JSON.parse(data) : null;
-    } catch (error) {
-        console.log('Cache get error:', error.message);
-        return null;
-    }
-}
-
-async function setCache(key, data, expirationInSeconds = 3600) {
-    if (!isRedisConnected) return;
-    try {
-        await redisClient.setEx(key, expirationInSeconds, JSON.stringify(data));
-    } catch (error) {
-        console.log('Cache set error:', error.message);
-    }
-}
 
 // Transform external API response to match frontend expectations
 function transformResponse(externalData, useResults = true) {
@@ -135,22 +52,10 @@ function transformResponse(externalData, useResults = true) {
 // Homepage content
 app.get('/api/homepage', async (req, res) => {
     try {
-        // Check cache first
-        const cacheKey = 'homepage:content';
-        const cachedData = await getCache(cacheKey);
-        
-        if (cachedData) {
-            console.log('Cache hit for homepage');
-            return res.json(cachedData);
-        }
-        
         const response = await axios.get(`${API_BASE_URL}/api/homepage`);
         
         // Transform external API response to match frontend expectations
         const result = transformResponse(response.data, false);
-        
-        // Cache for 10 minutes (homepage updates frequently)
-        await setCache(cacheKey, result, 600);
         
         res.json(result);
     } catch (error) {
@@ -168,23 +73,10 @@ app.get('/api/homepage', async (req, res) => {
 app.get('/api/search/:query', async (req, res) => {
     try {
         const { query } = req.params;
-        
-        // Check cache first
-        const cacheKey = `search:${query}`;
-        const cachedData = await getCache(cacheKey);
-        
-        if (cachedData) {
-            console.log(`Cache hit for search: ${query}`);
-            return res.json(cachedData);
-        }
-        
         const response = await axios.get(`${API_BASE_URL}/api/search/${encodeURIComponent(query)}`);
         
         // Transform external API response to match frontend expectations
         const result = transformResponse(response.data, true);
-        
-        // Cache for 30 minutes
-        await setCache(cacheKey, result, 1800);
         
         res.json(result);
     } catch (error) {
@@ -202,23 +94,10 @@ app.get('/api/search/:query', async (req, res) => {
 app.get('/api/info/:movieId', async (req, res) => {
     try {
         const { movieId } = req.params;
-        
-        // Check cache first
-        const cacheKey = `info:${movieId}`;
-        const cachedData = await getCache(cacheKey);
-        
-        if (cachedData) {
-            console.log(`Cache hit for movie info: ${movieId}`);
-            return res.json(cachedData);
-        }
-        
         const response = await axios.get(`${API_BASE_URL}/api/info/${movieId}`);
         
         // Transform external API response to match frontend expectations
         const result = transformResponse(response.data, true);
-        
-        // Cache for 1 hour (movie info rarely changes)
-        await setCache(cacheKey, result, 3600);
         
         res.json(result);
     } catch (error) {
@@ -367,4 +246,3 @@ app.listen(PORT, () => {
   console.log(`HandyFlix server running on port ${PORT}`);
   console.log(`API endpoints available at http://localhost:${PORT}/api/`);
 });
-
