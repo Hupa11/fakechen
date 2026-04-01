@@ -3,5 +3,5 @@
 
 module.exports = {
     // External API URL - can be changed as needed
-    API_BASE_URL: process.env.EXTERNAL_API_URL || 'https://testmovieboxapi-ab2c4c4adb04.herokuapp.com'
+    API_BASE_URL: process.env.EXTERNAL_API_URL || 'https://moviebox.asitha.top'
 };
