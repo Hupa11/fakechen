@@ -241,8 +241,10 @@ app.get('/test-french', (req, res) => {
   res.sendFile(path.join(__dirname, 'test-french.html'));
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`HandyFlix server running on port ${PORT}`);
-  console.log(`API endpoints available at http://localhost:${PORT}/api/`);
-});
+  app.listen(PORT, () => {
+    console.log(`HandyFlix server running on port ${PORT}`);
+  });
+
+
+// Vercel සඳහා අනිවාර්යයෙන්ම මෙය අවශ්‍ය වේ
+module.exports = app;
